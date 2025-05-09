@@ -247,10 +247,10 @@ def apply_adder_and_shrink_pyramid(pyramid, adder_data, row, col):
             target = 0
             stars  = [i + 1 for i in stars]
 
-        # If shifting would drop a useful bit, add a blank row on top first
-        if new_pyramid[0][target] != ' ':
-            new_pyramid.insert(0, [' '] * len(new_pyramid[0]))
-            carry_row_idx += 1                   # adder row slid down one
+        # # If shifting would drop a useful bit, add a blank row on top first
+        # if new_pyramid[0][target] != ' ':
+        #     new_pyramid.insert(0, [' '] * len(new_pyramid[0]))
+        #     carry_row_idx += 1                   # adder row slid down one
 
         rows = len(new_pyramid)
 
