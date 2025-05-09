@@ -1,0 +1,68 @@
+<!-- templates/dashboard.html -->
+ 
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Custom Adder Visualizer</title>
+  <style>
+    body{font-family:Arial,Helvetica,sans-serif;margin:20px}
+    .main-container{max-width:850px;margin:auto}
+    h1{text-align:center}
+    button{margin-left:.5rem;padding:.4rem .8rem;cursor:pointer}
+    .log{background:#f0f0f0;padding:10px;white-space:pre-wrap}
+  </style>
+</head>
+<body>
+<div class="main-container">
+  <h1>Custom Adder Visualizer</h1>
+
+  <!-- choose bit‑width + start solver -->
+  <div style="text-align:center;margin:1rem 0">
+    Bit‑width:
+    <input id="bits-input" type="number" min="2"
+           value="{{ bits|default(4) }}" style="width:5rem">
+    <button onclick="solve()">Solve pyramid</button>
+  </div>
+
+  <!-- live log -->
+  <h2>Process Log</h2>
+  <pre class="log" id="log-container">
+{% for line in log %}{{ line }}{% if not loop.last %}\n{% endif %}{% endfor %}
+  </pre>
+</div>
+
+<script>
+/* ---- log helper --------------------------------------------------------- */
+function renderLog(lines){
+  document.getElementById('log-container').textContent = lines.join('\n');
+}
+
+/* ---- main button -------------------------------------------------------- */
+async function solve(){
+  const bits = parseInt(document.getElementById('bits-input').value || 4, 10);
+  try{
+    const resp  = await fetch('/init_pyramid',{
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({bits})
+    });
+    const data  = await resp.json();
+    if(data.error){ alert(data.error); return; }
+    renderLog(data.log);               // update log only
+  }catch(e){
+    // console.error(e);
+
+  }
+}
+
+/* ---- periodic log refresh ---------------------------------------------- */
+setInterval(async()=>{
+  try{
+    const r = await fetch('/logs');
+    renderLog(await r.json());
+  }catch(e){}
+}, 5000);
+</script>
+</body>
+</html>

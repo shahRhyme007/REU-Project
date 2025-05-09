@@ -1,0 +1,19 @@
+apply_adder_and_shrink_pyramid
+select_best_adder
+add_arbitrary_ones_to_bottom_row
+fetch_custom_adder
+find_valid_start_positions
+is_pyramid_covered
+
+
+fetch_custom_adder calls:
+      is_pyramid_covered
+      add_arbitrary_ones_to_bottom_row
+      select_best_adder
+      apply_adder_and_shrink_pyramid
+
+select_best_adder calls:
+
+      find_valid_start_positions
+      
+
