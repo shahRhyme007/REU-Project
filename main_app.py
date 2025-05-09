@@ -355,20 +355,31 @@ def find_valid_start_positions(pyramid):
 
 
 
-# ----------------------------------------------------------------------
-# ✨ NEW helper – shrinks every adder to one compact text line
-# ----------------------------------------------------------------------
+### BEGIN PATCH 1 – _encode_adders  ##########################################
 def _encode_adders(adders):
     """
-    Return a '\n'-separated block:
-        <id>:<heights_digits_right‑to‑left>:<cost>
-    e.g.  17:321:6   means  id 17,  heights [3,2,1],  cost 6
+    Return a '\\n'-separated block, one candidate per line:
+
+        <id>:<row>,<col>:<heights_digits_right‑to‑left>:<cost>:S=<score>
+
+    Example:
+        17:3,4:321:6:S=1.500
+        ↑  ↑  ↑   ↑   └── score = covered_ones / cost  (rounded to 3 dp)
+        │  │  │   └──── cost of this adder
+        │  │  └──────── heights list [3,2,1]  (right‑most column first)
+        │  └─────────── column and row where the adder will land
+        └────────────── stable ID from the CSV
     """
     out = []
     for a in adders:
         heights = ''.join(str(h) for h in a['data'])
-        out.append(f"{a['adderIndex']}:{a['row']},{a['col']}:{heights}:{a['cost']}")
+        span    = sum(a['data'])          # how many ‘1’s this adder consumes
+        score   = round(span / a['cost'], 3)
+        out.append(
+            f"{a['adderIndex']}:{a['row']},{a['col']}:{heights}:{a['cost']}:S={score}"
+        )
     return '\n'.join(out)
+### END PATCH 1 ##############################################################
 
 
 
@@ -384,20 +395,40 @@ def select_best_adder(current_pyramid, available_adders, used_ids):
         if not valid_positions:                     # nothing to land on
             return None
 
-        # keep only the cheapest copy of every adder‑id ↓
+        # ───────────────────────────────────────────────────────────────
+        # 2) decide whether we *must* allow an already‑used ID
+        # ───────────────────────────────────────────────────────────────
+        remaining = [a for a in available_adders if a['id'] not in used_ids]
+
+        if remaining:                 # at least one brand‑new ID still free
+            skip_ids = used_ids       # keep banning the spent ones
+        else:                         # everything is spent → allow reuse
+            remaining = available_adders[:]   # full catalogue
+            skip_ids  = set()                 # empty set = skip nothing
+
+        # keep only the cheapest copy of each ID
         catalogue = {}
-        for a in available_adders:
+        for a in available_adders:                # ← no more ‘remaining’ / ‘skip’
             keep = catalogue.get(a['id'])
             if keep is None or a['cost'] < keep['cost']:
                 catalogue[a['id']] = a
         base_adders = list(catalogue.values())
 
-        # NEW — build every (adder , row , col) that really fits *now*
-        candidate_adders = filter_valid_adders(current_pyramid,
-                                            valid_positions,
-                                            base_adders)
+        # 3) enumerate every legal landing of every adder
+        candidate_adders = filter_valid_adders(
+            current_pyramid,
+            valid_positions,
+            base_adders,
+            skip_ids,           # we pass the full set so the helper
+        )     
+        
+        
+        if not candidate_adders and skip_ids:
+            candidate_adders = filter_valid_adders(
+                current_pyramid, valid_positions, base_adders, set())
+            skip_ids = set()                 # make downstream logic consistent                  # can *prefer* fresh IDs but still keep the rest
 
-        if not candidate_adders:                   # still nothing? give up
+        if not candidate_adders:
             return None
 
         
@@ -438,9 +469,10 @@ def select_best_adder(current_pyramid, available_adders, used_ids):
                 "adder will fit): " + json.dumps(sorted(list(used_ids))) + "\n\n"
                 "Rules to follow strictly:\n"
                 "- Choose **one line from the list above verbatim.**\n"
-                "- Respond with that line as JSON (same id / row / col).\n"
                 "- Never overlap the 'X'.\n"
-                "- Prefer the adder that covers the most 1s; break ties by lower cost.\n\n"
+                "- Compute **S = covered_ones / cost** from the trailing “S=” in each line.\n"
+                "- Select the line with the **largest S**. If several lines share that S,\n"
+                "  break ties by the larger covered_ones, then by the lower cost.\n\n"
                 "Respond ONLY with a JSON object:\n"
                 "{\n"
                 "  \"adderIndex\": <id>,\n"
@@ -564,18 +596,22 @@ def can_apply_adder(pyramid, adder_data, row, col):
                 return False  # Should be '1'
     return True
 
-def filter_valid_adders(pyramid, start_positions, adders):
+def filter_valid_adders(pyramid, start_positions, adders, banned_ids):
     """
     Filter adders that can be applied from available adders.
     """
     valid_choices = []
-    for  adder in adders:
-        adder_data = adder['data']
+    for adder in adders:
+        # skip IDs that are already spent
+        if adder['id'] in banned_ids:
+            continue
+
+        heights = adder['data']
         for pos in start_positions:
-            if can_apply_adder(pyramid, adder_data, pos['row'], pos['col']):
+            if can_apply_adder(pyramid, heights, pos['row'], pos['col']):
                 valid_choices.append({
                     'adderIndex': adder['id'],
-                    'data'      : adder_data,
+                    'data'      : heights,
                     'cost'      : adder['cost'],
                     'row'       : pos['row'],
                     'col'       : pos['col'],
@@ -592,12 +628,19 @@ def filter_valid_adders(pyramid, start_positions, adders):
 
     # ── B.  hard‑cap so the GPT prompt never explodes ─────────────────────
     MAX_FOR_GPT = 150
+    u = banned_ids                          # just a short alias
+
     valid_choices = sorted(
         valid_choices,
-        key=lambda d: (-d['row'], d['cost'])   # lower rows first, cheaper first
+        key=lambda d: (
+            d['adderIndex'] in u,              # ❶ fresh before reused
+            -(sum(d['data']) / d['cost']),     # ❷ score
+            -sum(d['data']),                   # ❸ coverage
+            d['cost']                          # ❹ cheaper
+        )
     )[:MAX_FOR_GPT]
 
-    return valid_choices
+    return valid_choices          # ← ← ← put this line back
 
 
 
