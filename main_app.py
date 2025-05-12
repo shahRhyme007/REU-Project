@@ -18,18 +18,12 @@ app = Flask(__name__)
 #     ['1', '1', '1', '1', '1', '1', 'X']
 # ]
 
-# ─────────── new helper ───────────
+
 def generate_pyramid(bit_width: int) -> list[list[str]]:
     """
-    Build a centred triangular pyramid for an N‑bit partial‑product tree.
-
-        top row has      1  '1'
-        next row has     3  '1's
-        …
-        (N‑1)th row has (2N‑3) '1's
-        bottom row has  (2N‑2) '1's then an 'X'
-
-    All rows are padded with spaces so every row length = (2·bit_width – 1)
+    Purpose: Generates a visual pyramid for N-bit multiplication with rows of '1's centered and a final 'X'.
+    Args: bit_width – how many bits (minimum 2).
+    Returns: A 2D list representing the pyramid.
     """
     if bit_width < 2:
         raise ValueError("Need at least 2 bits")
@@ -68,6 +62,12 @@ def add_to_log(message):
 
 # Load custom adders from CSV
 def load_csv(file_path):
+    """
+    Purpose: Loads custom adder definitions from a CSV.
+    Returns: A list of dictionaries: {id, data, cost}.
+    Parses first 5 numbers for heights (data), removes trailing 0s. 9th column is cost.
+
+    """
     result = []
     try:
         if not os.path.exists(file_path):
@@ -97,8 +97,8 @@ custom_adders = load_csv(file_path)
 
 def visualize_pyramid(p):
     """
-    Return a single string showing the pyramid rows top-to-bottom,
-    each row centered with leading spaces based on the width of the bottom row.
+    Purpose: Converts a 2D list pyramid into a formatted string.
+    Returns: A string where each row is centered.
     """
     if not p:
         return ""
@@ -115,16 +115,11 @@ def visualize_pyramid(p):
 
 
 
-def modify_selected_best_adder(selected_adder, pyramid):
+def carry_bit_calculation(selected_adder, pyramid):
     """
-    Modify the selected best adder and compute the carry bits for it.
-
-    Args:
-        selected_adder (dict): The selected adder containing 'data', 'row', and 'col'.
-        pyramid (list of lists): The current pyramid state.
-
-    Returns:
-        int: Number of bits required to represent the total sum.
+    Purpose: Simulates carry bit computation of an adder.
+    Returns: (carry_bits_list, num_bits_required)
+    Prints: Each row's binary representation and total bits needed.
     """
     heights = selected_adder['data']  # Extract the heights of the selected adder
     max_height = max(heights)  # Find max height to determine rows
@@ -164,14 +159,18 @@ def modify_selected_best_adder(selected_adder, pyramid):
 
 def apply_adder_and_shrink_pyramid(pyramid, adder_data, row, col):
     """
-    Drop one adder, create the right number of carry bits, let gravity settle the
-    bits, and return the new pyramid plus a success flag.
+    Purpose: Core transformation:
+    - Consumes bits using adder.
+    - Simulates gravity to let '1's fall.(Shrink pyramid)
+    - Adds required carry bits.
+    - Replaces * with '1'.
+    - The function returns an updated pyramid and a flag indicating whether the adder was applied successfully.
     """
-    # ─────────────────────────────────────────────────────────────────────────
-    new_pyramid = [r[:] for r in pyramid]          # deep copy
+    
+    new_pyramid = [r[:] for r in pyramid]         
     applied_successfully = True
 
-    # 1. ── stamp the adder (turn matched 1s to 0s) ──────────────────────────
+    # 1. stamp the adder (turn matched 1s to 0s)
     add_to_log(f"Custom adder used: {adder_data}") 
     adder_data = adder_data[::-1]                  # walk right → left
     start_col  = col
@@ -195,15 +194,15 @@ def apply_adder_and_shrink_pyramid(pyramid, adder_data, row, col):
     
     
 
-    # 2. ── compute how many carry bits we need for *this* adder ──────────────
+    # 2.  compute how many carry bits we need for *this* adder 
     selected   = {'data': adder_data, 'row': row, 'col': col}
-    carry_bits, num_bits_required = modify_selected_best_adder(selected, pyramid)
+    carry_bits, num_bits_required = carry_bit_calculation(selected, pyramid)
 
     add_to_log(f"\nCarry‑bit budget for this adder: {num_bits_required}")
     for line in carry_bits:            # optional: show the per‑row breakdown
         add_to_log("   " + line)
 
-    # ── 3.  mark every 0 in the *bottom row of THIS ADDER* as '*' ──────────
+    # 3.  mark every 0 in the *bottom row of THIS ADDER* as '*' 
     carry_row_idx = row                          # “row” is the adder’s bottom
     adder_cols    = [start_col - i               # columns touched in that row
                      for i, h in enumerate(adder_data) if h > 0]
@@ -215,13 +214,13 @@ def apply_adder_and_shrink_pyramid(pyramid, adder_data, row, col):
     add_to_log("\n② Pyramid after replacing 0 with * in adder row:\n" +
                visualize_pyramid(new_pyramid))
 
-    # 4. ── turn every remaining 0 in the whole pyramid into blank space ─────
+    # 4.  turn every remaining 0 in the whole pyramid into blank space 
     for r in range(len(new_pyramid)):
         for c in range(len(new_pyramid[r])):
             if new_pyramid[r][c] == '0':
                 new_pyramid[r][c] = ' '
 
-    # 5. ── gravity: pull each column of 1s straight down, ignoring * and X ──
+    # 5.  gravity: pull each column of 1s straight down, ignoring * and X 
     rows, cols = len(new_pyramid), len(new_pyramid[-1])
     for c in range(cols):
         stack = [new_pyramid[r][c] for r in range(rows) if new_pyramid[r][c] == '1']
@@ -234,7 +233,7 @@ def apply_adder_and_shrink_pyramid(pyramid, adder_data, row, col):
                 new_pyramid[r][c] = stack.pop(0)
             r -= 1
 
-    # 6. ── ensure *exactly* num_bits_required stars on the adder row ───────
+    # 6. ensure *exactly* num_bits_required stars on the adder row
     new_pyramid = make_pyramid_rectangular(new_pyramid)
     stars = [i for i, v in enumerate(new_pyramid[carry_row_idx]) if v == '*']
     missing = max(0, num_bits_required - len(stars))
@@ -291,26 +290,23 @@ def apply_adder_and_shrink_pyramid(pyramid, adder_data, row, col):
     add_to_log("\n③ Pyramid after inserting all required carry bits (*):\n" +
                visualize_pyramid(new_pyramid))
 
-    # 7. ── turn every '*' in the adder row into a real '1' ──────────────────
+    # 7. turn every '*' in the adder row into a real '1' 
     for c, v in enumerate(new_pyramid[carry_row_idx]):
         if v == '*':
             new_pyramid[carry_row_idx][c] = '1'
 
 
-    # 8. ── logs & return ────────────────────────────────────────────────────
+    # 8. logs & return 
     add_to_log("\nUpdated pyramid after adder + gravity + carry bits:\n" +
                visualize_pyramid(new_pyramid))
     return new_pyramid, True
 
 
-
+# ****Redundant code: Can be commented or deleted
 #***** ⬇️⬇️⬇️converting the pyramid to a matrix form 
+
 def make_pyramid_rectangular(pyramid):
-    """
-    Given a list of lists (the pyramid), returns a new list of lists
-    where each row is the same length, and the pyramid content
-    is centered within that length.
-    """
+   
     # 1) Compute the max width of the final pyramid rows
     max_width = 0
     for row in pyramid:
@@ -337,36 +333,40 @@ def make_pyramid_rectangular(pyramid):
 
 
 def is_pyramid_covered(pyramid):
+    """
+    Purpose: Checks if all bits have been consumed ('1' → '0', 'X', or ' ')
+    Returns: True if covered, else False.
+    """
     return all(bit == '0' or bit == 'X' or bit == ' ' for row in pyramid for bit in row)
 
 def find_valid_start_positions(pyramid):
     """
-    Return the coordinates of *all* 1‑bits that are legal landing spots.
-    We still skip the right‑most “X” column.
+    It determines all possible (row, col) coordinates where an adder could potentially land (i.e., where there's a '1').
+    These valid positions are passed to OpenAI as part of the prompt, so GPT can only choose from those precomputed positions.
     """
     positions = []
     for r in range(len(pyramid) - 1, -1, -1):           # bottom → top
         for c in range(len(pyramid[r]) - 2, -1, -1):    # right  → left
             if pyramid[r][c] == '1':
                 positions.append({'row': r, 'col': c})
+    # print("positions", positions)
     return positions           # may be hundreds, we’ll prune later
 
 
 
 
 
-### BEGIN PATCH 1 – _encode_adders  ##########################################
 def _encode_adders(adders):
     """
     Return a '\\n'-separated block, one candidate per line:
 
-        <id>:<row>,<col>:<heights_digits_right‑to‑left>:<cost>:S=<score>
+        <id>:<row>,<col>:<heights_digits_right-to-left>:<cost>:S=<score>
 
     Example:
         17:3,4:321:6:S=1.500
-        ↑  ↑  ↑   ↑   └── score = covered_ones / cost  (rounded to 3 dp)
+        ↑  ↑  ↑   ↑   └── score = covered_ones / cost  (rounded to 3dp)
         │  │  │   └──── cost of this adder
-        │  │  └──────── heights list [3,2,1]  (right‑most column first)
+        │  │  └──────── heights list [3,2,1]  (right-most column first)
         │  └─────────── column and row where the adder will land
         └────────────── stable ID from the CSV
     """
@@ -379,7 +379,7 @@ def _encode_adders(adders):
             f"{a['adderIndex']}:{a['row']},{a['col']}:{heights}:{a['cost']}:S={score}"
         )
     return '\n'.join(out)
-### END PATCH 1 ##############################################################
+
 
 
 
@@ -387,7 +387,21 @@ def _encode_adders(adders):
 
 def select_best_adder(current_pyramid, available_adders, used_ids):
     """
-    Select the best adder and its position using OpenAI API.
+    Purpose: Automatically choose the most efficient custom adder (from a list) and its valid placement within the current pyramid.
+    This selection is made using GPT via OpenAI's Chat API, based on a scoring heuristic.
+
+    🔸System Message
+        Tells GPT it is a decision-making assistant that must choose the best adder.
+
+    🔸User Message Includes:
+        Pyramid (as JSON)
+        Valid start positions
+        All valid adders in compressed format (_encode_adders())
+        used_ids
+        Clear selection rules:
+        Maximize S = coverage / cost
+        Break ties by coverage, then by cost
+        Respond only with JSON
     """
     try:
         # Step 1: Find valid positions
@@ -426,7 +440,7 @@ def select_best_adder(current_pyramid, available_adders, used_ids):
         if not candidate_adders and skip_ids:
             candidate_adders = filter_valid_adders(
                 current_pyramid, valid_positions, base_adders, set())
-            skip_ids = set()                 # make downstream logic consistent                  # can *prefer* fresh IDs but still keep the rest
+            skip_ids = set()                 # make downstream logic consistent                 
 
         if not candidate_adders:
             return None
@@ -439,7 +453,7 @@ def select_best_adder(current_pyramid, available_adders, used_ids):
         # add_to_log('Valid start positions: ' + json.dumps(valid_positions))
         add_to_log(f'Valid adders this turn: {len(candidate_adders)}')
 
-        # Step 2: Prepare the prompt for OpenAI API
+        
         system_message = {
             "role": "system",
             "content": (
@@ -481,8 +495,6 @@ def select_best_adder(current_pyramid, available_adders, used_ids):
                 "}"
             )
         }
-
-
 
 
 
@@ -576,6 +588,8 @@ def select_best_adder(current_pyramid, available_adders, used_ids):
 def can_apply_adder(pyramid, adder_data, row, col):
     """
     Check if an adder can be applied at (row, col) on the current pyramid.
+    This validation function checks whether an adder can be placed at a specific row and column without going out of bounds or overlapping with invalid cells. 
+    It mimics the structure of the adder and walks through the pyramid space it would occupy, returning True if it can fit safely.
     """
     start_col = col
     num_rows = len(pyramid)
@@ -598,7 +612,8 @@ def can_apply_adder(pyramid, adder_data, row, col):
 
 def filter_valid_adders(pyramid, start_positions, adders, banned_ids):
     """
-    Filter adders that can be applied from available adders.
+    This function filters out invalid or reused adders. It examines each adder and all valid start positions, checking if each can be legally applied. 
+    It retains only the cheapest version of each unique placement and sorts them to favor fresh adders with the best cost-efficiency.    
     """
     valid_choices = []
     for adder in adders:
@@ -617,7 +632,7 @@ def filter_valid_adders(pyramid, start_positions, adders, banned_ids):
                     'col'       : pos['col'],
                 })
     
-    # ── A.  keep only the *cheapest* landing per adderIndex ───────────────
+    #  A.  keep only the *cheapest* landing per adderIndex 
     unique = {}
     for choice in valid_choices:
         key   = (choice['adderIndex'], choice['row'], choice['col'])
@@ -626,7 +641,7 @@ def filter_valid_adders(pyramid, start_positions, adders, banned_ids):
             unique[key] = choice
     valid_choices = list(unique.values())
 
-    # ── B.  hard‑cap so the GPT prompt never explodes ─────────────────────
+    #  B.  hard‑cap so the GPT prompt never explodes
     MAX_FOR_GPT = 150
     u = banned_ids                          # just a short alias
 
@@ -647,14 +662,9 @@ def filter_valid_adders(pyramid, start_positions, adders, banned_ids):
 
 def find_ones_heights(pyramid):
     """
-    Calculate the heights of all diagonal columns of '1's in the pyramid,
-    starting from the rightmost diagonal and moving left.
-
-    Args:
-        pyramid (list of lists): The pyramid structure.
-
-    Returns:
-        list: Heights of '1's in each diagonal from the rightmost to the leftmost.
+    This function:
+    - Feeds the input vector into find_closest_element_by_transformed_vector(...), your fallback matching mechanism.
+    - Allows a closest-fit adder to be selected based on shape similarity — critical when GPT can't make progress.
     """
     num_rows = len(pyramid)
     heights = []
@@ -745,9 +755,32 @@ def collapse_pyramid_to_one_row(pyramid):
 
 def fetch_custom_adder() -> dict:
     """
-    Keep calling the OpenAI “best–adder” helper (plus a local fallback) until
-    either the pyramid is fully covered or no further progress is possible.
-    Returns a dict with the final pyramid and the list of adders that were used.
+    Initializes a working copy of the current pyramid.
+    Tracks all selected adders (all_selected_adders).
+    Enters a loop that runs until all '1' bits are gone.
+
+    Inside the Loop:
+        - Takes a snapshot of the current pyramid (to detect if it changes).
+        - Calls GPT via select_best_adder() to choose the most efficient adder.
+            If GPT returns a valid adder:
+                - Applies it using apply_adder_and_shrink_pyramid().
+                - Updates the pyramid and logs the adder used.
+        - If GPT fails:
+            Computes diagonal '1' heights with find_ones_heights().
+            Finds the closest matching adder from CSV using find_closest_element_by_transformed_vector().
+            Attempts to apply that fallback adder.
+        - If the pyramid didn't change (same as snapshot), the loop exits early to avoid infinite looping.
+
+    After the Loop:
+        - Rectifies the pyramid’s shape with make_pyramid_rectangular().
+        - Collapses all remaining '1' bits into a final single row ending in 'X'.
+        - Logs the final result.
+
+    Return Value:
+        - Returns a JSON-style dictionary:
+           On success: {"success": True, "selectedAdders": [...], "pyramid": [...]}
+           On error: {"error": "<description>"}
+   
     """
     global pyramid, custom_adders
 
@@ -771,14 +804,14 @@ def fetch_custom_adder() -> dict:
             snapshot = [row[:] for row in current_pyramid]
 
             # -----------------------------------------------------------
-            #  ① Ask OpenAI for the best valid adder
+            #  Ask OpenAI for the best valid adder
             # -----------------------------------------------------------
             best_adder = select_best_adder(current_pyramid,
                                remaining_adders,
                                used_ids)
 
             # -----------------------------------------------------------
-            #  ② If OpenAI returned something usable, apply it
+            #  If OpenAI returned something usable, apply it
             # -----------------------------------------------------------
             if best_adder:
                 new_pyramid, ok = apply_adder_and_shrink_pyramid(
@@ -803,7 +836,7 @@ def fetch_custom_adder() -> dict:
                     add_to_log(f"Adder could not be applied: {best_adder}")
 
             # -----------------------------------------------------------
-            #  ③ If nothing from OpenAI was usable, fall back to “closest”
+            #  If nothing from OpenAI was usable, fall back to “closest”
             # -----------------------------------------------------------
             else:
                 heights_now  = find_ones_heights(current_pyramid)
@@ -853,7 +886,7 @@ def fetch_custom_adder() -> dict:
                         break
 
             # ───────────────────────────────────────────────────────────
-            #  ④ SAFETY‑NET – if an iteration didn’t change the pyramid,
+            #   SAFETY‑NET – if an iteration didn’t change the pyramid,
             #     bail out to avoid an infinite loop.
             # ───────────────────────────────────────────────────────────
             if current_pyramid == snapshot:
@@ -954,7 +987,6 @@ def select_best_adder_route():
     
 
 # FETCH CUSTOM ADDER
-
 @app.route('/fetch_custom_adder', methods=['GET'])
 def fetch_custom_adder_route():
     try:
@@ -974,7 +1006,7 @@ def fetch_custom_adder_route():
         return jsonify({"success": False, "error": f"Unexpected error: {str(e)}"}), 500
 
 
-# ─────────────────────────  put this in place of your current route  ─────────────────────────
+
 @app.route('/init_pyramid', methods=['POST'])
 def init_pyramid_route():
     """
@@ -1004,9 +1036,6 @@ def init_pyramid_route():
     except Exception as e:
         traceback.print_exc()
         return jsonify({"error": str(e)}), 500
-# ──────────────────────────────────────────────────────────────────────────────────────────────
-
-
 
 
 
