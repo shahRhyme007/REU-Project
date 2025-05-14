@@ -143,4 +143,4 @@ MIT License — free to use, modify, and share. If helpful, please cite this rep
 ## 🙌 Acknowledgments
 
 - Inspired by: *"Automated Synthesis for In-Memory Computing"* (ICCAD 2023)
-- Built using: OpenAI GPT, Flask, and your engineering brilliance!
+- Built using: OpenAI GPT, Flask, and Python
